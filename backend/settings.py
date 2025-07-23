@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    "drf_spectacular",
     "rest_framework_simplejwt.token_blacklist",
     'corsheaders',
     'users',
@@ -95,6 +96,15 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+
+SPECTACULAR_SETTINGS = {
+    "TITLE":        "My Rental API",
+    "DESCRIPTION":  "All the endpoints for categories, items, orders, etc.",
+    "VERSION":      "1.0.0",
+    'SERVE_INCLUDE_SCHEMA': False,
 }
 
 SIMPLE_JWT = {
@@ -113,7 +123,8 @@ EMAIL_HOST_PASSWORD = 'oxsh nsbe rhvf ufeu'
 EMAIL_USE_TLS = True
 DEFAULT_FROM_EMAIL = 'no-reply@example.com'
 
-
+RAZORPAY_KEY_ID = 'rzp_test_HFfPUCaS0bxKUk'
+RAZORPAY_KEY_SECRET = 'jrlSmmsDfxVorGf5BuXpiwv8'
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
