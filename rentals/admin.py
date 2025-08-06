@@ -1,7 +1,7 @@
 # rentals/admin.py
 from django import forms
 from django.contrib import admin
-from .models import Category, ClothingItem, ClothingItemImage, RentalOrder
+from .models import Category, ClothingItem, ClothingItemImage, RentalOrder, SIZE_CHOICES
 
 class ClothingItemImageInline(admin.TabularInline):
     model = ClothingItemImage
@@ -9,9 +9,21 @@ class ClothingItemImageInline(admin.TabularInline):
 
 @admin.register(ClothingItem)
 class ClothingItemAdmin(admin.ModelAdmin):
-    list_display = ("id", "name", "category", "daily_rate", "available")
-    inlines     = (ClothingItemImageInline,)
+    list_display = ('name', 'category', 'available', 'daily_rate')
+    list_filter = ('available', 'category')
+    search_fields = ('name',)
 
+    def formfield_for_dbfield(self, db_field, **kwargs):
+        from django import forms
+        if db_field.name == 'sizes':
+            return forms.MultipleChoiceField(
+                choices=SIZE_CHOICES,
+                widget=forms.CheckboxSelectMultiple,
+                required=False,
+                label="Available Sizes"
+            )
+        return super().formfield_for_dbfield(db_field, **kwargs)
+        
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
     list_display = ("id","name","slug","image")

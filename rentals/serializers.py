@@ -1,10 +1,17 @@
 from rest_framework import serializers
 from .models import Category, ClothingItem, ClothingItemImage, RentalOrder
+from django.db.models import Q
+from datetime import timedelta
 
 class CategorySerializer(serializers.ModelSerializer):
+    subcategories = serializers.SerializerMethodField()
+
     class Meta:
-        model  = Category
+        model = Category
         fields = "__all__"
+
+    def get_subcategories(self, obj):
+        return CategorySerializer(obj.subcategories.all(), many=True).data
 
 class ClothingItemImageSerializer(serializers.ModelSerializer):
     class Meta:
@@ -52,16 +59,35 @@ class RentalOrderSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "total_price", "created_at")
 
     def validate(self, data):
-        # 1) size must be one of item.sizes
         item = data["item"]
-        if data["size"] not in item.sizes:
+        start_date = data["start_date"]
+        end_date = data["end_date"]
+        size = data["size"]
+
+        # Validate size exists in item's size list
+        if size not in item.sizes:
             raise serializers.ValidationError({"size": "Invalid size for this item"})
-        # 2) end_date must be after start_date
-        if data["end_date"] < data["start_date"]:
+
+        if end_date < start_date:
             raise serializers.ValidationError("`end_date` must not be before `start_date`")
+
+        overlapping_orders = RentalOrder.objects.filter(
+            item=item,
+            status__in=["pending", "active"],
+        ).filter(
+            Q(start_date__lte=end_date) & Q(end_date__gte=start_date)
+        )
+
+        if overlapping_orders.exists():
+            raise serializers.ValidationError("This item is already rented during the selected dates.")
+
         return data
 
     def create(self, validated_data):
-        # tie the order to the logged‑in user
         validated_data["user"] = self.context["request"].user
         return super().create(validated_data)
+
+
+
+
+        
