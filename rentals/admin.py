@@ -12,6 +12,7 @@ class ClothingItemAdmin(admin.ModelAdmin):
     list_display = ('name', 'category', 'available', 'daily_rate')
     list_filter = ('available', 'category')
     search_fields = ('name',)
+    inlines = [ClothingItemImageInline]
 
     def formfield_for_dbfield(self, db_field, **kwargs):
         from django import forms

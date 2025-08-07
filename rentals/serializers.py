@@ -19,6 +19,7 @@ class ClothingItemImageSerializer(serializers.ModelSerializer):
         fields = ("id","image")
 
 class ClothingItemSerializer(serializers.ModelSerializer):
+    category    = serializers.StringRelatedField()
     images      = ClothingItemImageSerializer(many=True, read_only=True)
     image_files = serializers.ListField(
         child=serializers.ImageField(),
