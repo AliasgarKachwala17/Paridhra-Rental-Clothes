@@ -1,7 +1,7 @@
 # rentals/views.py
 from rest_framework.parsers import MultiPartParser, FormParser
-from .models import Category, ClothingItem, RentalOrder
-from .serializers import CategorySerializer, ClothingItemSerializer, RentalOrderSerializer
+from .models import Category, ClothingItem, RentalOrder, SubCategory
+from .serializers import CategorySerializer, ClothingItemSerializer, RentalOrderSerializer, SubCategorySerializer
 from drf_spectacular.utils import extend_schema
 import razorpay
 from rest_framework.decorators import action
@@ -16,8 +16,18 @@ from django.conf import settings
 
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset         = Category.objects.all()
     serializer_class = CategorySerializer
+
+    def get_queryset(self):
+        # parent categories only
+        return Category.objects.filter(parent__isnull=True)
+
+class SubCategoryViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = CategorySerializer
+
+    def get_queryset(self):
+        return Category.objects.filter(parent__isnull=False)
+
 
 class ClothingItemViewSet(viewsets.ModelViewSet):
     queryset         = ClothingItem.objects.all()

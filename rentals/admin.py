@@ -1,18 +1,29 @@
 # rentals/admin.py
 from django import forms
 from django.contrib import admin
-from .models import Category, ClothingItem, ClothingItemImage, RentalOrder, SIZE_CHOICES
+from .models import Category, SubCategory, ClothingItem, ClothingItemImage, RentalOrder, SIZE_CHOICES
 
-class ClothingItemImageInline(admin.TabularInline):
+@admin.register(Category)
+class CategoryAdmin(admin.ModelAdmin):
+    list_display = ("id", "name", "slug", "image")
+
+@admin.register(SubCategory)
+class SubCategoryAdmin(admin.ModelAdmin):
+    list_display = ("id", "name", "slug", "category", "image")
+
+
+class ClothingItemImageInline(admin.TabularInline):  # or admin.StackedInline
     model = ClothingItemImage
-    extra = 1
+    extra = 1  # Number of empty forms to display
+    fields = ("image",)
 
 @admin.register(ClothingItem)
 class ClothingItemAdmin(admin.ModelAdmin):
-    list_display = ('name', 'category', 'available', 'daily_rate')
-    list_filter = ('available', 'category')
+    list_display = ('name', 'category', 'subcategory', 'available', 'daily_rate')
+    list_filter = ('available', 'category', 'subcategory')
     search_fields = ('name',)
     inlines = [ClothingItemImageInline]
+    
 
     def formfield_for_dbfield(self, db_field, **kwargs):
         from django import forms
@@ -25,9 +36,6 @@ class ClothingItemAdmin(admin.ModelAdmin):
             )
         return super().formfield_for_dbfield(db_field, **kwargs)
         
-@admin.register(Category)
-class CategoryAdmin(admin.ModelAdmin):
-    list_display = ("id","name","slug","image")
 
 @admin.register(ClothingItemImage)
 class ClothingItemImageAdmin(admin.ModelAdmin):

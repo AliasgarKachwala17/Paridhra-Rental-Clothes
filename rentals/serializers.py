@@ -1,17 +1,18 @@
 from rest_framework import serializers
-from .models import Category, ClothingItem, ClothingItemImage, RentalOrder
+from .models import Category, ClothingItem, ClothingItemImage, RentalOrder, SubCategory
 from django.db.models import Q
 from datetime import timedelta
 
 class CategorySerializer(serializers.ModelSerializer):
-    subcategories = serializers.SerializerMethodField()
-
     class Meta:
         model = Category
         fields = "__all__"
 
-    def get_subcategories(self, obj):
-        return CategorySerializer(obj.subcategories.all(), many=True).data
+class SubCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SubCategory
+        fields = "__all__"
+
 
 class ClothingItemImageSerializer(serializers.ModelSerializer):
     class Meta:
@@ -19,31 +20,47 @@ class ClothingItemImageSerializer(serializers.ModelSerializer):
         fields = ("id","image")
 
 class ClothingItemSerializer(serializers.ModelSerializer):
-    category    = serializers.StringRelatedField()
-    images      = ClothingItemImageSerializer(many=True, read_only=True)
+    images = ClothingItemImageSerializer(many=True, read_only=True)
     image_files = serializers.ListField(
         child=serializers.ImageField(),
         write_only=True,
         required=False,
         help_text="Upload one or more images"
     )
+    category = CategorySerializer(read_only=True)
+    subcategory = SubCategorySerializer(read_only=True)
+    
+    # ✅ Fixed these lines
+    category_id = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.all(),
+        source='category',
+        write_only=True
+    )
+    subcategory_id = serializers.PrimaryKeyRelatedField(
+        queryset=SubCategory.objects.all(),
+        source='subcategory',
+        write_only=True,
+        required=False
+    )
+
     class Meta:
-        model  = ClothingItem
+        model = ClothingItem
         fields = (
-            "id","name","description","category","sizes",
-            "daily_rate","available","images","image_files",
+            "id", "name", "description", "category", "subcategory",
+            "category_id", "subcategory_id", "sizes", "daily_rate",
+            "available", "images", "image_files"
         )
 
     def create(self, validated_data):
         files = validated_data.pop("image_files", [])
-        item  = super().create(validated_data)
+        item = super().create(validated_data)
         for f in files:
             ClothingItemImage.objects.create(item=item, image=f)
         return item
 
     def update(self, instance, validated_data):
         files = validated_data.pop("image_files", [])
-        item  = super().update(instance, validated_data)
+        item = super().update(instance, validated_data)
         for f in files:
             ClothingItemImage.objects.create(item=item, image=f)
         return item

@@ -6,15 +6,17 @@ User = get_user_model()
 class Category(models.Model):
     name = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(unique=True)
-    parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.CASCADE, related_name="subcategories")
-    image = models.ImageField(
-        upload_to="category_images/",
-        null=True, blank=True,
-        
-    )
+    image = models.ImageField(upload_to="category_images/", null=True, blank=True)
 
-    def __str__(self): 
-        return self.name
+    def __str__(self): return self.name
+
+class SubCategory(models.Model):
+    category = models.ForeignKey(Category, related_name="subcategories", on_delete=models.CASCADE)
+    name = models.CharField(max_length=100)
+    slug = models.SlugField(unique=True)
+    image = models.ImageField(upload_to="subcategory_images/", null=True, blank=True)
+
+    def __str__(self): return f"{self.name} ({self.category.name})"
 
 SIZE_CHOICES = [
     ("XS", "Extra Small"),
@@ -26,7 +28,8 @@ SIZE_CHOICES = [
     ("XXXL", "Triple Extra Large"),
 ]
 class ClothingItem(models.Model):
-    category = models.ForeignKey(Category, related_name="items", on_delete=models.CASCADE)
+    category = models.ForeignKey(Category, related_name="items", on_delete=models.CASCADE, null=True, blank=True)
+    subcategory = models.ForeignKey(SubCategory, related_name="items", on_delete=models.CASCADE, null=True, blank=True)
     name        = models.CharField(max_length=200)
     description = models.TextField()
     sizes       = models.JSONField(default=list,blank=True)
@@ -34,8 +37,7 @@ class ClothingItem(models.Model):
     daily_rate  = models.DecimalField(max_digits=8, decimal_places=2)
     available   = models.BooleanField(default=True)
 
-    def __str__(self): return f"{self.name} ({self.category.name})"
-
+    def __str__(self): return f"{self.name} ({self.category.name} > {self.subcategory.name if self.subcategory else 'No Sub'})"
 
 class ClothingItemImage(models.Model):
     item  = models.ForeignKey(ClothingItem, related_name="images", on_delete=models.CASCADE)
