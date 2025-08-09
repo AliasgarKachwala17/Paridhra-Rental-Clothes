@@ -17,16 +17,12 @@ from django.conf import settings
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = CategorySerializer
+    queryset = Category.objects.all()  # ✅ No parent filtering
 
-    def get_queryset(self):
-        # parent categories only
-        return Category.objects.filter(parent__isnull=True)
 
 class SubCategoryViewSet(viewsets.ReadOnlyModelViewSet):
-    serializer_class = CategorySerializer
-
-    def get_queryset(self):
-        return Category.objects.filter(parent__isnull=False)
+    serializer_class = SubCategorySerializer
+    queryset = SubCategory.objects.all()  # ✅ Use SubCategory model, not Category
 
 
 class ClothingItemViewSet(viewsets.ModelViewSet):
