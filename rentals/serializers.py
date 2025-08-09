@@ -9,9 +9,17 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 class SubCategorySerializer(serializers.ModelSerializer):
+    category_slug = serializers.CharField(source="category.slug", read_only=True)
+    category_name = serializers.CharField(source="category.name", read_only=True)
+
     class Meta:
         model = SubCategory
-        fields = "__all__"
+        fields = (
+            "id", "name", "slug", "image",
+            "category",       # existing FK field (id)
+            "category_name",  # readable name
+            "category_slug"   # readable slug
+        )
 
 
 class ClothingItemImageSerializer(serializers.ModelSerializer):
