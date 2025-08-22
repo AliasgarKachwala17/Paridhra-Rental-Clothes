@@ -2,11 +2,14 @@ from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
 from django.utils import timezone
 from rest_framework import status, generics
+from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
+from google.oauth2 import id_token
+from google.auth.transport import requests
 
 from .models import OTPRequest
-from .serializers import SendOTPSerializer, VerifyOTPSerializer
+from .serializers import SendOTPSerializer, VerifyOTPSerializer, GoogleLoginSerializer
 
 User = get_user_model()
 
@@ -56,3 +59,43 @@ class VerifyOTPView(generics.GenericAPIView):
             "access": str(refresh.access_token),
             "refresh": str(refresh),
         }, status=status.HTTP_200_OK)
+
+
+class GoogleLoginView(generics.GenericAPIView):
+    serializer_class = GoogleLoginSerializer
+    permission_classes = []  # allow anyone
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        token = serializer.validated_data["token"]
+
+        try:
+            # Verify token with Google
+            idinfo = id_token.verify_oauth2_token(token, requests.Request())
+            email = idinfo.get("email")
+            name = idinfo.get("name")
+
+            if not email:
+                return Response({"error": "Google account has no email"}, status=status.HTTP_400_BAD_REQUEST)
+
+            user, created = User.objects.get_or_create(
+                email=email,
+                defaults={"username": email.split("@")[0], "first_name": name},
+            )
+            user.auth_provider = "google"
+            user.save()
+
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "name": user.first_name,
+                }
+            })
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

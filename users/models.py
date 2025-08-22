@@ -1,6 +1,7 @@
 import random
 from datetime import timedelta
 from django.db import models
+from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
 
 class OTPRequest(models.Model):
@@ -20,3 +21,12 @@ class OTPRequest(models.Model):
     def create_otp(cls, email):
         code = f"{random.randint(0, 999999):06}"
         return cls.objects.create(email=email, code=code)
+
+class CustomUser(AbstractUser):
+    AUTH_PROVIDERS = (
+        ("email", "Email/Password"),
+        ("google", "Google"),
+    )
+    auth_provider = models.CharField(
+        max_length=20, choices=AUTH_PROVIDERS, default="email"
+    )

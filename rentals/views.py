@@ -13,6 +13,8 @@ import hmac
 import hashlib
 from rest_framework.views import APIView
 from django.conf import settings
+from .services.shiprocket import ShiprocketAPI
+from datetime import datetime
 
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
@@ -31,12 +33,54 @@ class ClothingItemViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.AllowAny]
     parser_classes     = [MultiPartParser, FormParser]
 
-@extend_schema(request=RentalOrderSerializer)
+@extend_schema(
+    request=RentalOrderSerializer,
+    responses=RentalOrderSerializer,
+    description="Create and manage rental orders"
+)
 class RentalOrderViewSet(viewsets.ModelViewSet):
-    queryset         = RentalOrder.objects.all()
+    queryset = RentalOrder.objects.all()
     serializer_class = RentalOrderSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    @action(detail=True, methods=["get"], url_path="track")
+    def track_order(self, request, pk=None):
+        try:
+            order = self.get_object()
+            if not order.payment_id:
+                return Response({"error": "Order not linked to a shipment"}, status=400)
+
+            shipment_id = order.shipment_id  
+            if not shipment_id:
+                return Response({"error": "Shipment not created for this order"}, status=400)
+
+            ship_api = ShiprocketAPI()
+            tracking = ship_api.track_order(shipment_id)
+
+            # Extract expected delivery date from tracking data
+            expected_delivery = (
+                tracking.get("tracking_data", {})
+                .get("etd") or
+                tracking.get("tracking_data", {}).get("expected_delivery")
+            )
+
+            days_left = None
+            if expected_delivery:
+                try:
+                    delivery_date = datetime.strptime(expected_delivery, "%Y-%m-%d").date()
+                    today = datetime.today().date()
+                    days_left = (delivery_date - today).days
+                except Exception:
+                    pass
+
+            return Response({
+                "order_id": order.id,
+                "shipment_id": shipment_id,
+                "tracking_info": tracking,
+                "days_left": days_left
+            })
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
 
 class PaymentRequestSerializer(serializers.Serializer):
     order_id = serializers.IntegerField()
@@ -95,7 +139,6 @@ class RazorpayWebhookPayloadSerializer(serializers.Serializer):
     event = serializers.CharField()
     payload = serializers.DictField()
 
-from rest_framework.views import APIView
 
 class RazorpayWebhookView(APIView):
     permission_classes = [permissions.AllowAny]
@@ -113,17 +156,122 @@ class RazorpayWebhookView(APIView):
             if not hmac.compare_digest(received_sig, generated_sig):
                 return Response({"error": "Invalid signature"}, status=400)
 
-
-
-        # Proceed to process payment
         event = request.data.get("event")
         payload = request.data.get("payload", {})
+
         if event == "payment.captured":
-            razorpay_order_id = payload["payment"]["entity"]["order_id"]
+            # ✅ Handle both real Razorpay payload and your test JSON
+            razorpay_order_id = (
+                payload.get("payment", {}).get("entity", {}).get("order_id")
+                or payload.get("order_id")  # fallback for your test payload
+            )
+
+            if not razorpay_order_id:
+                return Response({"error": "order_id missing in payload"}, status=400)
+
             try:
                 order = RentalOrder.objects.get(payment_id=razorpay_order_id)
+
                 order.status = "active"
                 order.save()
+
+                # ✅ Auto-create Shiprocket Shipment
+                ship_api = ShiprocketAPI()
+                try:
+                    shipment = ship_api.create_order(order)
+                    order.shipment_id = shipment.get("shipment_id")   # ✅ Save shipment ID
+                    order.save(update_fields=["shipment_id"])
+                    return Response({
+                        "status": "ok",
+                        "shipment": shipment
+                    })
+                except Exception as e:
+                    return Response(
+                        {"error": f"Payment captured but shipment creation failed: {str(e)}"},
+                        status=500
+                    )
+
             except RentalOrder.DoesNotExist:
                 return Response({"error": "Order not found for this payment."}, status=404)
-        return Response({"status": "ok"})    
+
+        return Response({"status": "ignored"})
+
+class ShippingViewSet(viewsets.ViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @action(methods=['post'], detail=True, url_path='create-shipment')
+    def create_shipment(self, request, pk=None):
+        try:
+            order = RentalOrder.objects.get(pk=pk, user=request.user)
+        except RentalOrder.DoesNotExist:
+            return Response({"error": "Order not found"}, status=404)
+
+        shiprocket = ShiprocketAPI()
+        resp = shiprocket.create_order(order)
+
+        order.shiprocket_awb = resp["awb_code"]
+        order.shiprocket_shipment_id = resp["shipment_id"]
+        order.save()
+
+        return Response({"shipment": resp})
+
+    @action(methods=['get'], detail=True, url_path='track-shipment')
+    def track_shipment(self, request, pk=None):
+        try:
+            order = RentalOrder.objects.get(pk=pk, user=request.user)
+        except RentalOrder.DoesNotExist:
+            return Response({"error": "Order not found"}, status=404)
+
+        if not order.shiprocket_shipment_id:
+            return Response({"error": "No shipment created for this order"}, status=400)
+
+        shiprocket = ShiprocketAPI()
+        resp = shiprocket.track_order(order.shiprocket_shipment_id)
+
+        # ✅ Extract tracking data safely
+        tracking_data = (
+            resp.get(str(order.shiprocket_shipment_id), {})
+            .get("tracking_data", {})
+        )
+
+        shipment_status = tracking_data.get("shipment_status", "Unknown")
+        track_url = tracking_data.get("track_url")
+        expected_delivery = (
+            tracking_data.get("etd") or
+            tracking_data.get("expected_delivery")
+        )
+
+        # ✅ Calculate days_left
+        days_left = None
+        if expected_delivery:
+            from datetime import datetime
+            try:
+                delivery_date = datetime.strptime(expected_delivery, "%Y-%m-%d").date()
+                today = datetime.today().date()
+                days_left = (delivery_date - today).days
+            except Exception:
+                pass
+        
+        status_map = {
+    0: "Pending Pickup",
+    1: "In Transit",
+    2: "Delivered",
+    3: "Return to Origin Initiated",
+    4: "Return to Origin Delivered",
+    }
+
+        shipment_status_code = tracking_data.get("shipment_status", 0)
+        shipment_status = status_map.get(shipment_status_code, "Unknown")
+
+        return Response({
+            "order_id": order.id,
+            "shipment_id": order.shiprocket_shipment_id,
+            "tracking_info": {
+                "tracking_data": {
+                    "shipment_status": shipment_status,  # ✅ mapped to text
+                    "track_url": tracking_data.get("track_url") or "Not available yet",
+                    "expected_delivery": tracking_data.get("etd") or tracking_data.get("expected_delivery"),
+                }
+            },
+            "days_left": days_left
+        })

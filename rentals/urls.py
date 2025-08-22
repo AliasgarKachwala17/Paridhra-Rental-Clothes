@@ -7,6 +7,7 @@ from .views import (
     RentalOrderViewSet,
     PaymentViewSet,
     RazorpayWebhookView,
+    ShippingViewSet,
 )
 
 router = DefaultRouter()
@@ -14,6 +15,7 @@ router.register(r"categories", CategoryViewSet, basename="category")
 router.register(r"subcategories", SubCategoryViewSet, basename="subcategory")
 router.register(r"items", ClothingItemViewSet, basename="item")
 router.register(r"orders", RentalOrderViewSet, basename="order")
+router.register(r"shipping", ShippingViewSet, basename="shipping")
 
 # First define the router.urls
 urlpatterns = router.urls

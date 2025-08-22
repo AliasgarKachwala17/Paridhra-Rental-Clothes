@@ -80,6 +80,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'backend.wsgi.application'
 
+AUTH_USER_MODEL = "users.CustomUser"
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
@@ -113,6 +114,11 @@ SIMPLE_JWT = {
     "ROTATE_REFRESH_TOKENS": False,
     "BLACKLIST_AFTER_ROTATION": True,
 }
+
+SHIPROCKET_EMAIL = "aliasgar.kachwala4604@gmail.com"
+SHIPROCKET_PASSWORD = "1%oG0$$UGF0i1t!C"
+SHIPROCKET_BASE_URL = "https://apiv2.shiprocket.in/v1/external"
+
 
 # Email Configuration
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'

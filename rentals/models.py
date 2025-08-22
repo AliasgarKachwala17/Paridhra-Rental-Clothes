@@ -52,6 +52,7 @@ class RentalOrder(models.Model):
         ("active",    "Active"),
         ("completed", "Completed"),
     ]
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="pending")
     name = models.CharField(max_length=100,default="name")
     email = models.EmailField(default="email")
     phone = models.CharField(max_length=15, default="+91")
@@ -63,6 +64,9 @@ class RentalOrder(models.Model):
     end_date    = models.DateField()
     total_price = models.DecimalField(max_digits=10, decimal_places=2, blank=True)
     payment_id = models.CharField(max_length=100, blank=True, null=True)
+    shiprocket_awb = models.CharField(max_length=50, blank=True, null=True)
+    shiprocket_shipment_id = models.CharField(max_length=50, blank=True, null=True)
+    shipment_id = models.CharField(max_length=50, blank=True, null=True)
     status      = models.CharField(max_length=10, choices=STATUS_CHOICES, default="pending")
     created_at  = models.DateTimeField(auto_now_add=True)
 
