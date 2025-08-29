@@ -48,41 +48,50 @@ class ClothingItemImage(models.Model):
 
 class RentalOrder(models.Model):
     STATUS_CHOICES = [
-        ("pending",   "Pending"),
-        ("active",    "Active"),
+        ("pending", "Pending"),
+        ("active", "Active"),
         ("completed", "Completed"),
     ]
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="pending")
-    name = models.CharField(max_length=100,default="name")
+    name = models.CharField(max_length=100, default="name")
     email = models.EmailField(default="email")
     phone = models.CharField(max_length=15, default="+91")
     address = models.TextField(default="city")
-    user        = models.ForeignKey(User, on_delete=models.CASCADE, related_name="orders")
-    item        = models.ForeignKey(ClothingItem, on_delete=models.PROTECT, related_name="orders")
-    size        = models.CharField(max_length=10,default="M")
-    start_date  = models.DateField()
-    end_date    = models.DateField()
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="orders")
+    
+    # 🔽 Removed single `item`
+    # item = models.ForeignKey(ClothingItem, on_delete=models.PROTECT, related_name="orders")
+
+    start_date = models.DateField()
+    end_date = models.DateField()
     total_price = models.DecimalField(max_digits=10, decimal_places=2, blank=True)
     payment_id = models.CharField(max_length=100, blank=True, null=True)
     shiprocket_awb = models.CharField(max_length=50, blank=True, null=True)
     shiprocket_shipment_id = models.CharField(max_length=50, blank=True, null=True)
     shipment_id = models.CharField(max_length=50, blank=True, null=True)
-    status      = models.CharField(max_length=10, choices=STATUS_CHOICES, default="pending")
-    created_at  = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
-        # 1) compute days (+1 so same‑day rent counts as 1 day)
+        # 1) compute days (+1 so same-day rent counts as 1 day)
         days = (self.end_date - self.start_date).days + 1
-        # 2) compute total
-        self.total_price = days * self.item.daily_rate
+
+        # 2) compute total = sum of each item daily_rate * qty * days
+        total = sum([
+            item.item.daily_rate * item.quantity * days
+            for item in self.items.all()
+        ]) if self.pk else 0  # only calculate if order exists
+        self.total_price = total
         super().save(*args, **kwargs)
 
-        # 3) update availability
-        if self.status in ("pending", "active"):
-            self.item.available = False
-        else:  # completed
-            self.item.available = True
-        self.item.save()
+    def __str__(self):
+        return f"Order #{self.id} - {self.user.email} ({self.start_date} to {self.end_date})"
+
+
+class RentalOrderItem(models.Model):
+    order = models.ForeignKey(RentalOrder, related_name="items", on_delete=models.CASCADE)
+    item = models.ForeignKey(ClothingItem, on_delete=models.PROTECT)
+    size = models.CharField(max_length=10, default="M")
+    quantity = models.PositiveIntegerField(default=1)
 
     def __str__(self):
-        return f"{self.item} - {self.user} ({self.start_date} to {self.end_date})"
+        return f"{self.item.name} (x{self.quantity})"

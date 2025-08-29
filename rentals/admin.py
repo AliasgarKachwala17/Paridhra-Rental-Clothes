@@ -1,7 +1,7 @@
 # rentals/admin.py
 from django import forms
 from django.contrib import admin
-from .models import Category, SubCategory, ClothingItem, ClothingItemImage, RentalOrder, SIZE_CHOICES
+from .models import Category, SubCategory, ClothingItem, ClothingItemImage, RentalOrder, SIZE_CHOICES, RentalOrderItem
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
@@ -41,35 +41,48 @@ class ClothingItemAdmin(admin.ModelAdmin):
 class ClothingItemImageAdmin(admin.ModelAdmin):
     list_display = ("id","item","image")
 
-class RentalOrderForm(forms.ModelForm):
-    size = forms.ChoiceField(choices=[])  # placeholder
+# class RentalOrderForm(forms.ModelForm):
+#     size = forms.ChoiceField(choices=[])  # placeholder
 
-    class Meta:
-        model  = RentalOrder
-        fields = "__all__"
+#     class Meta:
+#         model  = RentalOrder
+#         fields = "__all__"
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+#     def __init__(self, *args, **kwargs):
+#         super().__init__(*args, **kwargs)
 
-        # figure out which item is selected
-        item = None
-        if self.instance and self.instance.pk:
-            item = self.instance.item
-        else:
-            item_id = self.data.get("item") or self.initial.get("item")
-            if item_id:
-                try:
-                    item = ClothingItem.objects.get(pk=item_id)
-                except ClothingItem.DoesNotExist:
-                    pass
+#         # figure out which item is selected
+#         item = None
+#         if self.instance and self.instance.pk:
+#             item = self.instance.item
+#         else:
+#             item_id = self.data.get("item") or self.initial.get("item")
+#             if item_id:
+#                 try:
+#                     item = ClothingItem.objects.get(pk=item_id)
+#                 except ClothingItem.DoesNotExist:
+#                     pass
 
-        if item:
-            self.fields["size"].choices = [(s, s) for s in item.sizes]
-        else:
-            # no item yet → no choices
-            self.fields["size"].choices = []
+#         if item:
+#             self.fields["size"].choices = [(s, s) for s in item.sizes]
+#         else:
+#             # no item yet → no choices
+#             self.fields["size"].choices = []
+
+class RentalOrderItemInline(admin.TabularInline):
+    model = RentalOrderItem
+    extra = 1
+
 
 @admin.register(RentalOrder)
 class RentalOrderAdmin(admin.ModelAdmin):
-    form = RentalOrderForm
-    list_display = ("id","user","item","size","start_date","end_date","status")
+    list_display = ("id", "user_name", "user_email", "start_date", "end_date", "status", "total_price")
+    inlines = [RentalOrderItemInline]
+
+    def user_name(self, obj):
+        return obj.user.get_full_name() or obj.user.username
+    user_name.short_description = "User Name"
+
+    def user_email(self, obj):
+        return obj.user.email
+    user_email.short_description = "User Email"

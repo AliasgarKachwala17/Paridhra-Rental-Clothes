@@ -103,17 +103,27 @@ class PaymentViewSet(viewsets.ViewSet):
         except RentalOrder.DoesNotExist:
             return Response({"error": "Order not found."}, status=404)
 
-        # Save user info
+        # Save user info (for shipment later)
         order.name = data.get("name")
         order.email = data.get("email")
         order.phone = data.get("phone")
         order.address = data.get("address")
         order.save()
 
-        # Only allow payment for pending orders
+        # ✅ Only allow payment for pending orders
         if order.status != "pending":
             return Response({"error": "This order cannot be paid."}, status=400)
 
+        # ✅ Recalculate total based on multiple items
+        days = (order.end_date - order.start_date).days + 1
+        total = sum([
+            item.item.daily_rate * item.quantity * days
+            for item in order.items.all()
+        ])
+        order.total_price = total
+        order.save(update_fields=["total_price"])
+
+        # ✅ Create Razorpay order
         client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
         razorpay_order = client.order.create({
             "amount": int(float(order.total_price) * 100),  # paise
@@ -124,9 +134,10 @@ class PaymentViewSet(viewsets.ViewSet):
                 "user_email": request.user.email,
             }
         })
-        # Optionally store razorpay_order['id'] in your RentalOrder model
+
         order.payment_id = razorpay_order['id']
         order.save(update_fields=["payment_id"])
+
         return Response({
             "razorpay_order_id": razorpay_order["id"],
             "razorpay_key": settings.RAZORPAY_KEY_ID,
@@ -134,7 +145,6 @@ class PaymentViewSet(viewsets.ViewSet):
             "currency": razorpay_order["currency"],
             "order": RentalOrderSerializer(order).data,
         })
-
 class RazorpayWebhookPayloadSerializer(serializers.Serializer):
     event = serializers.CharField()
     payload = serializers.DictField()
@@ -177,19 +187,16 @@ class RazorpayWebhookView(APIView):
 
                 # ✅ Auto-create Shiprocket Shipment
                 ship_api = ShiprocketAPI()
-                try:
-                    shipment = ship_api.create_order(order)
-                    order.shipment_id = shipment.get("shipment_id")   # ✅ Save shipment ID
-                    order.save(update_fields=["shipment_id"])
-                    return Response({
-                        "status": "ok",
-                        "shipment": shipment
-                    })
-                except Exception as e:
-                    return Response(
-                        {"error": f"Payment captured but shipment creation failed: {str(e)}"},
-                        status=500
-                    )
+                shipment = ship_api.create_order(order)
+
+                # ✅ Save shipment ID
+                order.shipment_id = shipment.get("shipment_id")
+                order.save(update_fields=["shipment_id"])
+
+                return Response({
+                    "status": "ok",
+                    "shipment": shipment
+                })
 
             except RentalOrder.DoesNotExist:
                 return Response({"error": "Order not found for this payment."}, status=404)
