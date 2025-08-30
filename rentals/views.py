@@ -169,11 +169,11 @@ class RazorpayWebhookView(APIView):
         event = request.data.get("event")
         payload = request.data.get("payload", {})
 
+        # rentals/views.py -> inside RazorpayWebhookView.post
         if event == "payment.captured":
-            # ✅ Handle both real Razorpay payload and your test JSON
             razorpay_order_id = (
                 payload.get("payment", {}).get("entity", {}).get("order_id")
-                or payload.get("order_id")  # fallback for your test payload
+                or payload.get("order_id")
             )
 
             if not razorpay_order_id:
@@ -181,17 +181,23 @@ class RazorpayWebhookView(APIView):
 
             try:
                 order = RentalOrder.objects.get(payment_id=razorpay_order_id)
-
                 order.status = "active"
-                order.save()
+                order.save(update_fields=["status"])
 
-                # ✅ Auto-create Shiprocket Shipment
+                # ✅ Create Shiprocket shipment
                 ship_api = ShiprocketAPI()
                 shipment = ship_api.create_order(order)
 
-                # ✅ Save shipment ID
-                order.shipment_id = shipment.get("shipment_id")
-                order.save(update_fields=["shipment_id"])
+                # Shiprocket response keys:
+                shiprocket_order_id = shipment.get("order_id")        # internal Shiprocket order id
+                shiprocket_shipment_id = shipment.get("shipment_id")  # this is what you track
+                awb_code = shipment.get("awb_code")
+
+                order.shipment_id = str(shiprocket_order_id)  # optional, but store separately
+                order.shiprocket_shipment_id = str(shiprocket_shipment_id)
+                order.shiprocket_awb = awb_code or ""
+                order.save(update_fields=["shipment_id", "shiprocket_shipment_id", "shiprocket_awb"])
+
 
                 return Response({
                     "status": "ok",
@@ -201,7 +207,6 @@ class RazorpayWebhookView(APIView):
             except RentalOrder.DoesNotExist:
                 return Response({"error": "Order not found for this payment."}, status=404)
 
-        return Response({"status": "ignored"})
 
 class ShippingViewSet(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated]

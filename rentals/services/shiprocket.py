@@ -1,3 +1,4 @@
+# rentals/services/shiprocket.py
 import requests
 from django.conf import settings
 
@@ -9,7 +10,7 @@ class ShiprocketAPI:
     def get_token(self):
         url = f"{self.base_url}/auth/login"
         payload = {
-            "email": settings.SHIPROCKET_EMAIL.strip(),  # ✅ strip whitespace
+            "email": settings.SHIPROCKET_EMAIL.strip(),
             "password": settings.SHIPROCKET_PASSWORD,
         }
         res = requests.post(url, json=payload)
@@ -19,6 +20,18 @@ class ShiprocketAPI:
     def create_order(self, order):
         url = f"{self.base_url}/orders/create/adhoc"
         headers = {"Authorization": f"Bearer {self.token}"}
+
+        # ✅ Multi-item order support
+        order_items = [
+            {
+                "name": oi.item.name,
+                "sku": str(oi.item.id),
+                "units": oi.quantity,
+                "selling_price": str(oi.item.daily_rate),
+            }
+            for oi in order.items.all()
+        ]
+
         payload = {
             "order_id": str(order.id),
             "order_date": str(order.created_at.date()),
@@ -33,14 +46,7 @@ class ShiprocketAPI:
             "billing_email": order.email,
             "billing_phone": order.phone,
             "shipping_is_billing": True,
-            "order_items": [
-                {
-                    "name": order.item.name,
-                    "sku": str(order.item.id),
-                    "units": 1,
-                    "selling_price": str(order.total_price),
-                }
-            ],
+            "order_items": order_items,
             "payment_method": "Prepaid",
             "sub_total": str(order.total_price),
             "length": 10,
