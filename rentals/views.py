@@ -39,9 +39,14 @@ class ClothingItemViewSet(viewsets.ModelViewSet):
     description="Create and manage rental orders"
 )
 class RentalOrderViewSet(viewsets.ModelViewSet):
-    queryset = RentalOrder.objects.all()
     serializer_class = RentalOrderSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_staff:  # ✅ Admin/staff users can see all orders
+            return RentalOrder.objects.all()
+        return RentalOrder.objects.filter(user=user)  # ✅ Normal users only see their own
 
     @action(detail=True, methods=["get"], url_path="track")
     def track_order(self, request, pk=None):
