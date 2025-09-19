@@ -15,6 +15,8 @@ from rest_framework.views import APIView
 from django.conf import settings
 from .services.shiprocket import ShiprocketAPI
 from datetime import datetime
+from django.core.mail import send_mail
+import requests
 
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
@@ -160,57 +162,59 @@ class RazorpayWebhookView(APIView):
 
     @extend_schema(request=RazorpayWebhookPayloadSerializer)
     def post(self, request, *args, **kwargs):
-        if not settings.DEBUG:  # Only verify signature in production
-            webhook_secret = "your_actual_webhook_secret"
-            received_sig = request.META.get('HTTP_X_RAZORPAY_SIGNATURE')
-            if not received_sig:
-                return Response({"error": "Missing Razorpay signature"}, status=400)
-
-            body = request.body
-            generated_sig = hmac.new(webhook_secret.encode(), body, hashlib.sha256).hexdigest()
-            if not hmac.compare_digest(received_sig, generated_sig):
-                return Response({"error": "Invalid signature"}, status=400)
-
         event = request.data.get("event")
         payload = request.data.get("payload", {})
 
-        # rentals/views.py -> inside RazorpayWebhookView.post
         if event == "payment.captured":
             razorpay_order_id = (
                 payload.get("payment", {}).get("entity", {}).get("order_id")
                 or payload.get("order_id")
             )
-
-            if not razorpay_order_id:
-                return Response({"error": "order_id missing in payload"}, status=400)
-
             try:
                 order = RentalOrder.objects.get(payment_id=razorpay_order_id)
                 order.status = "active"
                 order.save(update_fields=["status"])
 
-                # ✅ Create Shiprocket shipment
+                # ✅ Create shipment
                 ship_api = ShiprocketAPI()
                 shipment = ship_api.create_order(order)
 
-                # Shiprocket response keys:
-                shiprocket_order_id = shipment.get("order_id")        # internal Shiprocket order id
-                shiprocket_shipment_id = shipment.get("shipment_id")  # this is what you track
-                awb_code = shipment.get("awb_code")
-
-                order.shipment_id = str(shiprocket_order_id)  # optional, but store separately
-                order.shiprocket_shipment_id = str(shiprocket_shipment_id)
-                order.shiprocket_awb = awb_code or ""
+                order.shipment_id = str(shipment.get("order_id"))
+                order.shiprocket_shipment_id = str(shipment.get("shipment_id"))
+                order.shiprocket_awb = shipment.get("awb_code", "")
                 order.save(update_fields=["shipment_id", "shiprocket_shipment_id", "shiprocket_awb"])
 
+                # # 🔄 Immediately schedule reverse pickup
+                # return_ship = ship_api.create_return_order(order)
+                # order.return_shipment_id = str(return_ship.get("shipment_id"))
+                # order.return_awb = return_ship.get("awb_code", "")
+                # order.save(update_fields=["return_shipment_id","return_awb"])
 
-                return Response({
-                    "status": "ok",
-                    "shipment": shipment
-                })
+                # ✅ Tracking link
+                tracking_url = f"https://shiprocket.co/tracking/{order.shiprocket_awb}"
+
+                # ✅ Send Email
+                send_mail(
+                    subject="Your Rental Order Payment is Successful ✅",
+                    message=f"Hello {order.name},\n\nYour payment is confirmed.\nYour order will be placed in 3 days.\nTrack here: {tracking_url}\n\nThank you for renting with us!",
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[order.email],
+                )
+                return Response(
+                    {
+                        "success": True,
+                        "message": "Payment captured and shipment created.",
+                        "order_id": order.id,
+                        "shipment_id": order.shiprocket_shipment_id,
+                    },
+                    status=status.HTTP_200_OK,
+                )
 
             except RentalOrder.DoesNotExist:
                 return Response({"error": "Order not found for this payment."}, status=404)
+        
+        # For any other event, just acknowledge
+        return Response({"message": "Event ignored"}, status=status.HTTP_200_OK)
 
 
 class ShippingViewSet(viewsets.ViewSet):
@@ -292,3 +296,25 @@ class ShippingViewSet(viewsets.ViewSet):
             },
             "days_left": days_left
         })
+
+    @action(methods=['post'], detail=True, url_path='create-return')
+    def create_return(self, request, pk=None):
+        """
+        Trigger a Shiprocket reverse-pickup (return) for this order.
+        """
+        try:
+            order = RentalOrder.objects.get(pk=pk, user=request.user)
+        except RentalOrder.DoesNotExist:
+            return Response({"error": "Order not found"}, status=404)
+
+        if not order.shiprocket_shipment_id:
+            return Response({"error": "Forward shipment not ready yet"}, status=400)
+
+        ship = ShiprocketAPI()
+        resp = ship.create_return_order(order)
+
+        order.return_shipment_id = resp.get("shipment_id")
+        order.return_awb = resp.get("awb_code")
+        order.save(update_fields=["return_shipment_id", "return_awb"])
+
+        return Response({"return_shipment": resp})

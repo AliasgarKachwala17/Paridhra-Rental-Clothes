@@ -70,6 +70,9 @@ class RentalOrder(models.Model):
     shiprocket_shipment_id = models.CharField(max_length=50, blank=True, null=True)
     shipment_id = models.CharField(max_length=50, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    # 🔄 reverse / return shipping
+    return_shipment_id = models.CharField(max_length=50, blank=True, null=True)
+    return_awb = models.CharField(max_length=50, blank=True, null=True)
 
     def save(self, *args, **kwargs):
         # 1) compute days (+1 so same-day rent counts as 1 day)

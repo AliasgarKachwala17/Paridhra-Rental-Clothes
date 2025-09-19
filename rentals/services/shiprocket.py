@@ -64,3 +64,62 @@ class ShiprocketAPI:
         r = requests.get(url, headers=headers)
         r.raise_for_status()
         return r.json()
+
+    def create_return_order(self, order):
+        """
+        Creates a reverse pickup (return). Shiprocket needs full order details,
+        not just pickup address.
+        """
+        url = f"{self.base_url}/orders/create/return"
+        headers = {"Authorization": f"Bearer {self.token}"}
+
+        # same items as the forward order
+        order_items = [
+            {
+                "name": oi.item.name,
+                "sku": str(oi.item.id),
+                "units": oi.quantity,
+                "selling_price": str(oi.item.daily_rate),
+            }
+            for oi in order.items.all()
+        ]
+
+        payload = {
+            "order_id": f"RETURN-{order.id}",
+            "order_date": str(order.created_at.date()),
+
+            # payment & total
+            "payment_method": "Prepaid",
+            "sub_total": str(order.total_price),
+
+            # shipping (where courier will deliver return)
+            "shipping_customer_name": order.name,
+            "shipping_address": order.address,
+            "shipping_city": "Pune",
+            "shipping_state": "Maharashtra",
+            "shipping_country": "India",
+            "shipping_pincode": "411042",
+            "shipping_email": order.email,
+            "shipping_phone": order.phone,
+
+            # pickup (where courier will collect)
+            "pickup_customer_name": order.name,
+            "pickup_address": order.address,
+            "pickup_city": "Pune",
+            "pickup_state": "Maharashtra",
+            "pickup_country": "India",
+            "pickup_pincode": "411042",
+            "pickup_email": order.email,
+            "pickup_phone": order.phone,
+
+            "order_items": order_items,
+            "length": 10,
+            "breadth": 10,
+            "height": 1,
+            "weight": 0.5,
+            "return_reason": "Rental return",
+        }
+
+        r = requests.post(url, json=payload, headers=headers)
+        r.raise_for_status()
+        return r.json()
