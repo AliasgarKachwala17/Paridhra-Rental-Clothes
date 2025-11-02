@@ -56,7 +56,7 @@ class ClothingItemSerializer(serializers.ModelSerializer):
         fields = (
             "id", "name", "description", "category", "subcategory",
             "category_id", "subcategory_id", "sizes", "daily_rate",
-            "available", "images", "image_files"
+            "available", "images", "image_files","security_deposit"
         )
 
     def create(self, validated_data):
@@ -90,7 +90,7 @@ class RentalOrderSerializer(serializers.ModelSerializer):
             "total_price", "status", "created_at"
         )
         read_only_fields = ("id", "total_price", "created_at")
-
+        
     def validate(self, data):
         start_date = data["start_date"]
         end_date = data["end_date"]
@@ -119,10 +119,16 @@ class RentalOrderSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         items_data = validated_data.pop("items")
         validated_data["user"] = self.context["request"].user
+
+        # Create order with initial default price
         order = RentalOrder.objects.create(**validated_data)
+
+        # Create items
         for item_data in items_data:
             RentalOrderItem.objects.create(order=order, **item_data)
-        order.save()  # compute total
+
+        # Now recompute total
+        order.save()
         return order
 
         

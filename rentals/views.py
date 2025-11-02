@@ -51,7 +51,7 @@ class RentalOrderViewSet(viewsets.ModelViewSet):
         return RentalOrder.objects.filter(user=user)  # ✅ Normal users only see their own
 
     @action(detail=True, methods=["get"], url_path="track")
-    def track_order(self, request, pk=None):
+    def track_order(self, request, pk: int = None):
         try:
             order = self.get_object()
             if not order.payment_id:
@@ -110,35 +110,31 @@ class PaymentViewSet(viewsets.ViewSet):
         except RentalOrder.DoesNotExist:
             return Response({"error": "Order not found."}, status=404)
 
-        # Save user info (for shipment later)
-        order.name = data.get("name")
-        order.email = data.get("email")
-        order.phone = data.get("phone")
-        order.address = data.get("address")
+        # update contact info
+        for field in ["name","email","phone","address"]:
+            setattr(order, field, data.get(field))
         order.save()
 
-        # ✅ Only allow payment for pending orders
         if order.status != "pending":
             return Response({"error": "This order cannot be paid."}, status=400)
 
-        # ✅ Recalculate total based on multiple items
-        days = (order.end_date - order.start_date).days + 1
-        total = sum([
-            item.item.daily_rate * item.quantity * days
-            for item in order.items.all()
-        ])
-        order.total_price = total
-        order.save(update_fields=["total_price"])
+        # ✅ total_price already = rental + security deposit
+        amount_paise = int(float(order.total_price) * 100)
 
-        # ✅ Create Razorpay order
+        # ✅ Calculate total security deposit from items
+        security_deposit_total = sum(
+            item.item.security_deposit * item.quantity
+            for item in order.items.all()
+        )
+
         client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
         razorpay_order = client.order.create({
-            "amount": int(float(order.total_price) * 100),  # paise
+            "amount": amount_paise,
             "currency": "INR",
             "payment_capture": 1,
             "notes": {
                 "rental_order_id": str(order.id),
-                "user_email": request.user.email,
+                "security_deposit": str(security_deposit_total),  # ✅ FIXED
             }
         })
 
@@ -176,13 +172,16 @@ class RazorpayWebhookView(APIView):
                 order.save(update_fields=["status"])
 
                 # ✅ Create shipment
-                ship_api = ShiprocketAPI()
-                shipment = ship_api.create_order(order)
+                try:
+                    ship_api = ShiprocketAPI()
+                    shipment = ship_api.create_order(order)
 
-                order.shipment_id = str(shipment.get("order_id"))
-                order.shiprocket_shipment_id = str(shipment.get("shipment_id"))
-                order.shiprocket_awb = shipment.get("awb_code", "")
-                order.save(update_fields=["shipment_id", "shiprocket_shipment_id", "shiprocket_awb"])
+                    order.shipment_id = str(shipment.get("order_id"))
+                    order.shiprocket_shipment_id = str(shipment.get("shipment_id"))
+                    order.shiprocket_awb = shipment.get("awb_code", "")
+                    order.save(update_fields=["shipment_id", "shiprocket_shipment_id", "shiprocket_awb"])
+                except Exception as e:
+                    return Response({"warning": "Payment captured, but shipment creation failed", "error": str(e)})
 
                 # # 🔄 Immediately schedule reverse pickup
                 # return_ship = ship_api.create_return_order(order)
